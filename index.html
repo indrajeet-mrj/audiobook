@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audiobook Web App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      text-align: center;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .file-input {
+      margin: 20px 0;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .output {
+      margin-top: 20px;
+    }
+    .audio-controls {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Audiobook Web App</h1>
+    <p>Upload an image or PDF to convert it into an audiobook.</p>
+
+    <div class="file-input">
+      <input type="file" id="fileInput" accept="image/*,application/pdf">
+    </div>
+
+    <button onclick="processFile()">Convert to Audiobook</button>
+
+    <div class="output">
+      <h3>Extracted Text:</h3>
+      <p id="textOutput"></p>
+    </div>
+
+    <div class="audio-controls">
+      <button onclick="playAudio()">Play Audio</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1/dist/tesseract.min.js"></script>
+  <script>
+    let currentText = '';
+    
+    function processFile() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        alert('Please upload a file first.');
+        return;
+      }
+
+      if (file.type.startsWith('image/')) {
+        processImage(file);
+      } else if (file.type === 'application/pdf') {
+        processPDF(file);
+      } else {
+        alert('Unsupported file type. Please upload an image or PDF.');
+      }
+    }
+
+    function processImage(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        Tesseract.recognize(
+          reader.result,
+          'eng',
+          {
+            logger: info => console.log(info),
+          }
+        ).then(({ data: { text } }) => {
+          displayText(text);
+          currentText = text;
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function processPDF(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js';
+
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
+        loadingTask.promise.then(pdf => {
+          let text = '';
+          const pagePromises = [];
+
+          for (let i = 1; i <= pdf.numPages; i++) {
+            pagePromises.push(
+              pdf.getPage(i).then(page => 
+                page.getTextContent().then(content => {
+                  const pageText = content.items.map(item => item.str).join(' ');
+                  text += pageText + '\n'; // Add a newline between pages
+                })
+              )
+            );
+          }
+
+          Promise.all(pagePromises).then(() => {
+            displayText(text);
+            currentText = text;
+          }).catch(error => {
+            console.error('Error processing PDF pages:', error);
+            alert('Failed to extract text from PDF. Please try a different file.');
+          });
+        }).catch(error => {
+          console.error('Error loading PDF:', error);
+          alert('Failed to load PDF. Please ensure it is a valid file.');
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function displayText(text) {
+      document.getElementById('textOutput').innerText = text;
+    }
+
+    function playAudio() {
+      if (!currentText || currentText.trim() === '') {
+        alert('No text available for audio playback. Please process a file first.');
+        return;
+      }
+
+      // Stop any ongoing speech synthesis before starting a new one
+      window.speechSynthesis.cancel();
+
+      try {
+        const speech = new SpeechSynthesisUtterance(currentText);
+        speech.lang = 'en-US';
+        speech.rate = 1; // Adjust playback speed if needed
+        speech.onerror = (e) => console.error('Speech synthesis error:', e);
+        speech.onstart = () => console.log('Audio playback started');
+        speech.onend = () => console.log('Audio playback finished');
+
+        // Start playback
+        window.speechSynthesis.speak(speech);
+      } catch (error) {
+        console.error('Error during audio playback:', error);
+        alert('Unable to play audio. Please try again.');
+      }
+    }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
+</body>
+</html>
